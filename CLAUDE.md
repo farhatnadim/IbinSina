@@ -1,69 +1,109 @@
 # CLAUDE.md
 
-This file provides context for Claude when working with this codebase.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
-MIL-Lab is a Multiple Instance Learning (MIL) library for computational pathology. It provides standardized implementations of MIL models and pretrained weights (FEATHER models) for whole-slide image classification.
-
-## Directory Structure
-
-```
-MIL-Lab/
-├── src/                    # Core library code
-│   ├── models/             # MIL model implementations (ABMIL, TransMIL, CLAM, etc.)
-│   ├── components/         # Shared layers and attention mechanisms
-│   ├── builders/           # Model registry and factory
-│   └── builder.py          # create_model() entry point
-├── training/               # Training infrastructure
-│   ├── config.py           # ExperimentConfig, DataConfig, TrainConfig dataclasses
-│   ├── trainer.py          # Training loop
-│   ├── evaluator.py        # Evaluation metrics
-│   └── mlflow_tracking.py  # MLflow wrapper with offline fallback
-├── train_mil.py            # Single training run script
-├── train_mil_cv.py         # Cross-validation training script
-├── configs/                # JSON experiment configurations
-├── scripts/                # Utility scripts (MLflow server, sync)
-├── data_loading/           # Data loading utilities
-├── examples/               # Usage examples
-└── docs/                   # Documentation
-```
+IbinSina is a training infrastructure for Multiple Instance Learning (MIL) models in computational pathology. It provides training, cross-validation, and evaluation pipelines for whole-slide image (WSI) classification. The core MIL models come from the external [MIL-Lab](https://github.com/mahmoodlab/MIL-Lab) package (`src`), while this repo contains the training infrastructure.
 
 ## Key Commands
+
+### Setup
+
+```bash
+# Create venv with Python 3.10 (required - not 3.11+)
+uv venv .venv --python 3.10
+source .venv/bin/activate
+
+# Install package with dependencies (includes MIL-Lab and TRIDENT)
+uv pip install -e .
+
+# For CLAM model support
+pip install git+https://github.com/oval-group/smooth-topk
+```
 
 ### Training
 
 ```bash
-# Single training run
+# Single-split training
 python train_mil.py --config configs/panda_multiclass_config.json
 
-# Cross-validation
-python train_mil_cv.py --config configs/panda_multiclass_config.json --num-folds 5
+# N-fold cross-validation with held-out test set
+python train_mil_cv.py --config configs/panda_multiclass_config.json --num-folds 5 --test-frac 0.2
+
+# Evaluate trained model
+python eval_mil.py --config config.json --checkpoint best_model.pth
 ```
 
 ### MLflow
 
 ```bash
-# Start MLflow server
 ./scripts/start_mlflow.sh --background
-
-# Set tracking URI
 export MLFLOW_TRACKING_URI="http://localhost:5000"
-
-# Sync offline runs to server
-python scripts/sync_mlflow_offline.py
+python scripts/sync_mlflow_offline.py  # Sync offline runs to server
 ```
 
-## Configuration
+## Architecture
 
-Experiment configs are JSON files with this structure:
+### Directory Structure
+
+```
+IbinSina/
+├── train_mil.py              # Single-split training entry point
+├── train_mil_cv.py           # Cross-validation entry point
+├── eval_mil.py               # Model evaluation script
+├── training/                 # Training infrastructure
+│   ├── config.py             # ExperimentConfig, DataConfig, TrainConfig dataclasses
+│   ├── trainer.py            # MILTrainer with AMP, early stopping, gradient clipping
+│   ├── evaluator.py          # Metrics: accuracy, kappa, AUC, F1
+│   └── mlflow_tracking.py    # MLflowTracker with offline fallback
+├── data_loading/             # Data pipeline
+│   ├── dataset.py            # MILDataset, GroupedMILDataset, HierarchicalMILDataset
+│   ├── feature_loader.py     # CLAM H5 feature loading
+│   └── pytorch_adapter.py    # PyTorch wrappers, collation, weighted sampling
+├── configs/                  # JSON experiment configurations
+├── scripts/                  # MLflow server management
+└── docs/                     # mlflow_guide.md, FUSION_STRATEGIES.md
+```
+
+### Data Loading Pipeline
+
+Three-tier abstraction for different fusion strategies:
+
+1. **MILDataset** (slide-level): One bag per slide, returns `SlideData(slide_id, features[M,D], label, case_id)`
+
+2. **GroupedMILDataset** (early fusion): Via `.concat_by('case_id')` - concatenates all patches from multi-slide cases into one bag
+
+3. **HierarchicalMILDataset** (late fusion): Via `.group_by('case_id')` - preserves slide structure for hierarchical attention
+
+Use early fusion when slides are arbitrary splits; use late fusion when slides represent distinct samples needing slide-level interpretability.
+
+### Model Loading
+
+Models come from the external MIL-Lab package:
+
+```python
+from src.builder import create_model
+
+model = create_model('abmil.base.uni_v2.none', num_classes=6)  # No pretraining
+model = create_model('abmil.base.uni_v2.pc108-24k', num_classes=5)  # FEATHER pretrained
+```
+
+Model naming pattern: `<model>.<config>.<encoder>.<pretrain>`
+- Models: abmil, transmil, clam, dsmil, dftd, ilra, rrt, wikg
+
+### Configuration
+
+Configs are JSON files loaded via `ExperimentConfig.load(path)`:
 
 ```json
 {
   "data": {
     "labels_csv": "path/to/labels.csv",
     "features_dir": "path/to/features/",
-    "split_column": "split"
+    "split_column": "split",
+    "group_column": "case_id",
+    "fusion": "early"
   },
   "train": {
     "num_epochs": 20,
@@ -72,30 +112,22 @@ Experiment configs are JSON files with this structure:
     "early_stopping_metric": "kappa"
   },
   "model_name": "abmil.base.uni_v2.none",
-  "run_name": "experiment_name_here",
   "num_classes": 6,
   "output_dir": "experiments/my_experiment",
+  "run_name": "experiment_name",
   "mlflow": {
     "enabled": true,
-    "experiment_name": "my-experiment-group"
+    "experiment_name": "my-experiment-group",
+    "offline_fallback": true
   }
 }
 ```
 
-### Key Config Fields
-
-- `run_name`: Name for individual training runs (shown in MLflow UI)
-- `mlflow.experiment_name`: Groups related runs together in MLflow
-- `mlflow.enabled`: Set `false` to disable all tracking
-- `mlflow.offline_fallback`: If `true`, saves locally when server unavailable
-
-## Model Naming Convention
-
-Models follow the pattern: `<model>.<config>.<encoder>.<pretrain>`
-
-Examples:
-- `abmil.base.uni_v2.none` - ABMIL with UNIv2 encoder, no pretraining
-- `abmil.base.uni_v2.pc108-24k` - ABMIL pretrained on PC-108 task (24K slides)
+Key fields:
+- `run_name`: Individual run name (shown in MLflow)
+- `mlflow.experiment_name`: Groups related runs
+- `train.task_type`: "binary" or "multiclass"
+- `train.early_stopping_metric`: "kappa", "balanced_accuracy", "auc", "f1_macro", "accuracy", or "auto"
 
 ## Code Style
 
@@ -104,12 +136,15 @@ Examples:
 - Type hints encouraged
 - Keep functions focused and small
 
-## Testing
+## Output Structure
 
-The project uses standard pytest. Virtual environment is in `.venv/`.
+Training outputs are timestamped directories:
+```
+experiments/run_YYYYMMDD_HHMMSS/
+├── best_model.pth
+├── config.json
+├── results.json
+└── predictions.npz
+```
 
-## Documentation
-
-See `docs/` for guides:
-- `docs/mlflow_guide.md` - MLflow tracking setup and usage
-- `docs/FUSION_STRATEGIES.md` - Multi-slide fusion approaches
+Cross-validation adds fold subdirectories and `cv_results.json` with aggregated metrics.
