@@ -6,7 +6,8 @@ Training infrastructure for Multiple Instance Learning (MIL) models in computati
 
 - **Single-split training** (`train_mil.py`): Train MIL models with train/val/test splits
 - **Cross-validation** (`train_mil_cv.py`): N-fold CV with held-out test set and ensemble evaluation
-- **Evaluation** (`eval_mil.py`): Evaluate trained models on new data
+- **Evaluation** (`eval_mil.py`): Evaluate trained models on labeled test data with metrics
+- **Inference** (`infer_mil.py`): Run predictions on unlabeled slides
 - **MLflow integration**: Experiment tracking and model logging
 - **Flexible configuration**: JSON-based configs for reproducible experiments
 
@@ -71,9 +72,52 @@ python train_mil_cv.py --config configs/panda_multiclass_cv_config.json \
 
 ### Evaluation
 
+Evaluate a trained model on labeled test data (computes metrics):
+
 ```bash
+# With config file
 python eval_mil.py --config configs/panda_multiclass_config.json \
-    --checkpoint checkpoints/best_model.pth
+    --checkpoint experiments/run_001/best_model.pth
+
+# With explicit arguments
+python eval_mil.py \
+    --checkpoint experiments/run_001/best_model.pth \
+    --model-name abmil.base.uni_v2.none \
+    --num-classes 6 \
+    --labels-csv /path/to/test_labels.csv \
+    --features-dir /path/to/test_features/
+```
+
+### Inference
+
+Run predictions on unlabeled slides (no ground truth needed):
+
+```bash
+# With config file - all slides in features_dir
+python infer_mil.py --config configs/panda_multiclass_config.json \
+    --checkpoint experiments/run_001/best_model.pth \
+    --output predictions.csv
+
+# Single slide
+python infer_mil.py --config configs/panda_multiclass_config.json \
+    --checkpoint experiments/run_001/best_model.pth \
+    --features /path/to/slide.h5
+
+# With explicit arguments and custom labels
+python infer_mil.py \
+    --checkpoint experiments/run_001/best_model.pth \
+    --model-name abmil.base.uni_v2.none \
+    --num-classes 6 \
+    --features-dir /path/to/features/ \
+    --label-names "Gleason 3+3,Gleason 3+4,Gleason 4+3,Gleason 4+4,Gleason 4+5,Gleason 5+5" \
+    --output predictions.csv
+```
+
+Output format (CSV):
+```csv
+slide_id,predicted_label,confidence
+slide_001,Gleason 3+4,0.8743
+slide_002,Gleason 4+3,0.6521
 ```
 
 ### Configuration
@@ -128,7 +172,8 @@ model = create_model('abmil.base.uni.pc108-24k', num_classes=5)
 ComputationalPathology/
 ├── train_mil.py          # Single-split training
 ├── train_mil_cv.py       # Cross-validation training
-├── eval_mil.py           # Model evaluation
+├── eval_mil.py           # Model evaluation (with metrics)
+├── infer_mil.py          # Inference (predictions only)
 ├── training/             # Training utilities
 │   ├── config.py         # Configuration dataclasses
 │   ├── trainer.py        # Training loop
@@ -136,6 +181,7 @@ ComputationalPathology/
 │   └── mlflow_tracking.py
 ├── data_loading/         # Data utilities
 │   ├── dataset.py        # MIL dataset class
+│   ├── feature_loader.py # CLAM H5 feature loading
 │   └── pytorch_adapter.py
 └── configs/              # Example configurations
 ```

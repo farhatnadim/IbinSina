@@ -5,6 +5,12 @@ MIL Evaluation Script
 Evaluate a trained MIL model on test data.
 
 Usage:
+    # With config file
+    python eval_mil.py \
+        --config configs/panda_config.json \
+        --checkpoint experiments/run_001/best_model.pth
+
+    # With explicit arguments
     python eval_mil.py \
         --checkpoint experiments/run_001/best_model.pth \
         --model-name abmil.base.uni_v2.none \
@@ -21,6 +27,7 @@ import torch
 
 from data_loading.dataset import MILDataset
 from data_loading.pytorch_adapter import create_dataloader
+from training.config import ExperimentConfig
 from training.evaluator import evaluate, print_evaluation_results
 from training.utils import save_predictions
 from src.builder import create_model
@@ -28,6 +35,42 @@ from src.builder import create_model
 
 def main():
     args = parse_args()
+
+    # Load config if provided
+    config = None
+    if args.config:
+        try:
+            config = ExperimentConfig.load(args.config)
+        except FileNotFoundError as e:
+            print(f"Error: {e}")
+            exit(1)
+        except json.JSONDecodeError as e:
+            print(f"Error: Invalid JSON in config file: {args.config}")
+            print(f"  {e}")
+            exit(1)
+
+    # Resolve parameters: CLI args override config
+    model_name = args.model_name or (config.model_name if config else None)
+    num_classes = args.num_classes or (config.num_classes if config else None)
+    labels_csv = args.labels_csv or (config.data.labels_csv if config else None)
+    features_dir = args.features_dir or (config.data.features_dir if config else None)
+    task_type = args.task_type or (config.train.task_type.value if config else 'multiclass')
+
+    # Validate required parameters
+    missing = []
+    if not model_name:
+        missing.append('--model-name')
+    if not num_classes:
+        missing.append('--num-classes')
+    if not labels_csv:
+        missing.append('--labels-csv')
+    if not features_dir:
+        missing.append('--features-dir')
+
+    if missing:
+        print(f"Error: Missing required arguments: {', '.join(missing)}")
+        print("Provide these via --config or as command line arguments.")
+        exit(1)
 
     # Setup device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -43,8 +86,8 @@ def main():
     print("=" * 70 + "\n")
 
     dataset = MILDataset(
-        labels_csv=args.labels_csv,
-        features_dir=args.features_dir,
+        labels_csv=labels_csv,
+        features_dir=features_dir,
     )
 
     print(f"Total samples: {len(dataset)}")
@@ -69,7 +112,7 @@ def main():
     print("LOADING MODEL")
     print("=" * 70 + "\n")
 
-    model = create_model(args.model_name, num_classes=args.num_classes)
+    model = create_model(model_name, num_classes=num_classes)
 
     # Load checkpoint
     checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=True)
@@ -79,7 +122,7 @@ def main():
         model.load_state_dict(checkpoint)
 
     model = model.to(device)
-    print(f"Model: {args.model_name}")
+    print(f"Model: {model_name}")
     print(f"Checkpoint: {args.checkpoint}")
     print(f"Parameters: {sum(p.numel() for p in model.parameters()):,}\n")
 
@@ -93,8 +136,8 @@ def main():
         test_loader=loader,
         device=device,
         use_amp=True,
-        task_type=args.task_type,
-        num_classes=args.num_classes,
+        task_type=task_type,
+        num_classes=num_classes,
     )
 
     print_evaluation_results(results, class_labels)
@@ -125,9 +168,21 @@ def main():
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Evaluate a trained MIL model')
+    parser = argparse.ArgumentParser(
+        description='Evaluate a trained MIL model',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
 
-    # Required arguments
+    # Config file (makes other args optional)
+    parser.add_argument(
+        '--config',
+        type=str,
+        default=None,
+        help='Path to config JSON file (provides model-name, num-classes, labels-csv, features-dir)',
+    )
+
+    # Required arguments (or from config)
     parser.add_argument(
         '--checkpoint',
         type=str,
@@ -137,25 +192,25 @@ def parse_args():
     parser.add_argument(
         '--model-name',
         type=str,
-        required=True,
+        default=None,
         help='Model architecture string (e.g., abmil.base.uni_v2.none)',
     )
     parser.add_argument(
         '--num-classes',
         type=int,
-        required=True,
+        default=None,
         help='Number of output classes',
     )
     parser.add_argument(
         '--labels-csv',
         type=str,
-        required=True,
+        default=None,
         help='Path to CSV with test labels',
     )
     parser.add_argument(
         '--features-dir',
         type=str,
-        required=True,
+        default=None,
         help='Path to directory with test feature files',
     )
 
@@ -175,9 +230,9 @@ def parse_args():
     parser.add_argument(
         '--task-type',
         type=str,
-        default='multiclass',
+        default=None,
         choices=['binary', 'multiclass'],
-        help='Task type: binary or multiclass (default: multiclass)',
+        help='Task type: binary or multiclass (default: from config or multiclass)',
     )
 
     return parser.parse_args()
