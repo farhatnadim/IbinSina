@@ -22,7 +22,7 @@ class MILDatasetAdapter(Dataset):
     Wraps MILDataset as a PyTorch Dataset.
 
     Converts string labels to integer indices and returns
-    (features, label) tuples ready for training.
+    (features, label, sample_id) tuples ready for training.
     """
 
     def __init__(
@@ -50,11 +50,13 @@ class MILDatasetAdapter(Dataset):
     def __len__(self) -> int:
         return len(self.mil_dataset)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, str]:
         slide = self.mil_dataset[idx]
         features = slide.features  # [M, D]
         label = torch.tensor(self.label_map[slide.label], dtype=torch.long)
-        return features, label
+        # Return slide_id for MILDataset, or group_id for GroupedMILDataset
+        sample_id = getattr(slide, 'slide_id', None) or getattr(slide, 'group_id', str(idx))
+        return features, label, sample_id
 
     @property
     def num_classes(self) -> int:
@@ -72,7 +74,7 @@ class MILDatasetAdapter(Dataset):
 class HierarchicalMILDatasetAdapter(Dataset):
     """
     Wraps HierarchicalMILDataset as a PyTorch Dataset.
-    Returns (features_list, label) where features_list is a List[torch.Tensor].
+    Returns (features_list, label, group_id) where features_list is a List[torch.Tensor].
     """
 
     def __init__(
@@ -93,11 +95,12 @@ class HierarchicalMILDatasetAdapter(Dataset):
     def __len__(self) -> int:
         return len(self.hier_dataset)
 
-    def __getitem__(self, idx: int) -> Tuple[List[torch.Tensor], torch.Tensor]:
+    def __getitem__(self, idx: int) -> Tuple[List[torch.Tensor], torch.Tensor, str]:
         hier_data = self.hier_dataset[idx]
         features_list = hier_data.features  # List of [M_i, D]
         label = torch.tensor(self.label_map[hier_data.label], dtype=torch.long)
-        return features_list, label
+        group_id = hier_data.group_id
+        return features_list, label, group_id
 
     @property
     def num_classes(self) -> int:
@@ -112,38 +115,40 @@ class HierarchicalMILDatasetAdapter(Dataset):
 
 
 def hierarchical_collate_fn(
-    batch: List[Tuple[List[torch.Tensor], torch.Tensor]]
-) -> Tuple[List[List[torch.Tensor]], torch.Tensor, List]:
+    batch: List[Tuple[List[torch.Tensor], torch.Tensor, str]]
+) -> Tuple[List[List[torch.Tensor]], torch.Tensor, List, List[str]]:
     """
     Collate function for hierarchical MIL.
-    Each item in batch is (List[torch.Tensor], label).
-    Returns (padded_features_list, labels, masks_list).
+    Each item in batch is (List[torch.Tensor], label, group_id).
+    Returns (padded_features_list, labels, masks_list, sample_ids).
     """
-    features_lists, labels = zip(*batch)
+    features_lists, labels, sample_ids = zip(*batch)
     labels = torch.stack(labels)
-    
-    return list(features_lists), labels, []
+
+    return list(features_lists), labels, [], list(sample_ids)
 
 
 def mil_collate_fn(
-    batch: List[Tuple[torch.Tensor, torch.Tensor]]
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    batch: List[Tuple[torch.Tensor, torch.Tensor, str]]
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[str]]:
     """
     Collate function for variable-length bags.
 
     Pads features to max length and creates attention masks.
 
     Args:
-        batch: List of (features, label) tuples
+        batch: List of (features, label, sample_id) tuples
                features: [M_i, D] tensor (variable num patches)
                label: scalar tensor
+               sample_id: string identifier (slide_id or group_id)
 
     Returns:
         padded_features: [B, M_max, D] tensor
         labels: [B] tensor
         mask: [B, M_max] attention mask (1=valid, 0=padding)
+        sample_ids: List[str] of sample identifiers
     """
-    features_list, labels = zip(*batch)
+    features_list, labels, sample_ids = zip(*batch)
 
     batch_size = len(features_list)
     max_patches = max(f.shape[0] for f in features_list)
@@ -160,7 +165,18 @@ def mil_collate_fn(
 
     labels = torch.stack(labels)
 
-    return padded, labels, mask
+    return padded, labels, mask, list(sample_ids)
+
+
+def single_item_collate_fn(
+    batch: List[Tuple[torch.Tensor, torch.Tensor, str]]
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[str]]:
+    """
+    Collate function for batch_size=1.
+
+    Same as mil_collate_fn but optimized for single items.
+    """
+    return mil_collate_fn(batch)
 
 
 def create_dataloader(
@@ -176,13 +192,14 @@ def create_dataloader(
     Create a DataLoader from a MILDataset or HierarchicalMILDataset.
     """
     from .dataset import HierarchicalMILDataset, GroupedMILDataset, MILDataset
-    
+
     if isinstance(mil_dataset, HierarchicalMILDataset):
         adapter = HierarchicalMILDatasetAdapter(mil_dataset, label_map=label_map)
         collate_fn = hierarchical_collate_fn
     else:
         adapter = MILDatasetAdapter(mil_dataset, label_map=label_map)
-        collate_fn = mil_collate_fn if batch_size > 1 else None
+        # Always use collate_fn to ensure consistent output format with sample_ids
+        collate_fn = mil_collate_fn
 
     sampler = None
     if weighted_sampling:
@@ -201,10 +218,6 @@ def create_dataloader(
             generator=generator,
         )
         shuffle = False  # Cannot use both sampler and shuffle
-
-    # Only override collate_fn if it's not already set (e.g., for hierarchical)
-    if not isinstance(mil_dataset, HierarchicalMILDataset):
-        collate_fn = mil_collate_fn if batch_size > 1 else None
 
     loader = DataLoader(
         adapter,

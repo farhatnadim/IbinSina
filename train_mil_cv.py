@@ -42,7 +42,14 @@ from typing import Dict, List, Any
 from data_loading.dataset import MILDataset
 from data_loading.pytorch_adapter import create_dataloader
 from training.config import ExperimentConfig, DataConfig, TrainConfig, TaskType
-from training.mlflow_tracking import MLflowTracker, create_tracker
+from training.tracking import (
+    ExperimentTracker,
+    create_tracker,
+    get_git_info,
+    ensure_clean_repo,
+    create_experiment_tag,
+    GitVersioningError,
+)
 from training.evaluator import evaluate, calculate_metrics
 from training.utils import apply_grouping
 from src.builder import create_model
@@ -94,16 +101,26 @@ def ensemble_evaluate(
     # Run inference with each model
     criterion = nn.CrossEntropyLoss()
     all_fold_logits = []
+    all_sample_ids = []
 
     for model_idx, model in enumerate(models):
         fold_logits = []
 
         with torch.no_grad():
-            for features, labels, *mask in tqdm(
+            for batch in tqdm(
                 test_loader,
                 desc=f'Model {model_idx + 1}/{len(models)}',
                 leave=False
             ):
+                # Handle both old format (features, labels, mask) and new (features, labels, mask, ids)
+                if len(batch) == 4:
+                    features, labels, mask, sample_ids = batch
+                    # Only collect sample_ids on first model pass
+                    if model_idx == 0:
+                        all_sample_ids.extend(sample_ids)
+                else:
+                    features, labels, *rest = batch
+
                 features = features.to(device)
                 labels = labels.to(device)
 
@@ -133,7 +150,11 @@ def ensemble_evaluate(
 
     # Get true labels
     all_labels = []
-    for _, labels, *_ in test_loader:
+    for batch in test_loader:
+        if len(batch) == 4:
+            _, labels, _, _ = batch
+        else:
+            _, labels, *_ = batch
         all_labels.extend(labels.numpy())
     all_labels = np.array(all_labels)
 
@@ -153,13 +174,19 @@ def ensemble_evaluate(
     if 'auc' in metrics:
         print(f"  AUC:              {metrics['auc']:.4f}")
 
-    return {
+    result = {
         **metrics,
         'predictions': ensemble_preds.tolist(),
         'labels': all_labels.tolist(),
         'ensemble_logits': ensemble_logits.numpy(),
         'ensemble_probs': ensemble_probs,
     }
+
+    # Include sample_ids if available
+    if all_sample_ids:
+        result['sample_ids'] = all_sample_ids
+
+    return result
 
 
 def aggregate_fold_metrics(fold_results: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -221,8 +248,8 @@ def main():
     # Load base config
     try:
         config = ExperimentConfig.load(args.config)
-    except FileNotFoundError:
-        print(f"Error: Config file not found: {args.config}")
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
         exit(1)
     except json.JSONDecodeError as e:
         print(f"Error: Invalid JSON in config file: {args.config}")
@@ -233,6 +260,15 @@ def main():
     config.data.num_folds = args.num_folds
     config.data.test_frac = args.test_frac
     config.data.cv_seed = args.seed
+
+    # Check git state if tagging is enabled
+    if config.tracking and config.tracking.git_tag:
+        try:
+            ensure_clean_repo()
+        except GitVersioningError as e:
+            print(f"\nGit versioning error: {e}")
+            print("To disable this check, set 'git_tag: false' in your tracking config.\n")
+            exit(1)
 
     print("=" * 80)
     print("CROSS-VALIDATION TRAINING")
@@ -317,6 +353,8 @@ def main():
     with mlflow_context:
         # Log CV parameters on parent run
         if tracker:
+            # Log git info for reproducibility
+            tracker.log_params(get_git_info())
             tracker.log_params({
                 **config.to_mlflow_params(),
                 "num_folds": args.num_folds,
@@ -438,14 +476,17 @@ def main():
         class_labels = [inverse_label_map[i] for i in range(len(label_map))]
 
         # Save predictions
-        np.savez(
-            test_eval_dir / 'predictions.npz',
-            labels=ensemble_results['labels'],
-            predictions=ensemble_results['predictions'],
-            ensemble_logits=ensemble_results['ensemble_logits'],
-            ensemble_probs=ensemble_results['ensemble_probs'],
-            class_labels=class_labels,
-        )
+        save_dict = {
+            'labels': ensemble_results['labels'],
+            'predictions': ensemble_results['predictions'],
+            'ensemble_logits': ensemble_results['ensemble_logits'],
+            'ensemble_probs': ensemble_results['ensemble_probs'],
+            'class_labels': class_labels,
+        }
+        if 'sample_ids' in ensemble_results:
+            save_dict['sample_ids'] = ensemble_results['sample_ids']
+
+        np.savez(test_eval_dir / 'predictions.npz', **save_dict)
 
         # Save test metrics
         test_metrics = {
@@ -494,6 +535,27 @@ def main():
         # Log final CV results to MLflow
         if tracker:
             tracker.log_artifact(cv_run_dir / 'cv_results.json')
+
+        # Create git tag after successful CV training
+        if config.tracking and config.tracking.git_tag:
+            try:
+                cv_run_name = f"CV_{config.run_name or config.model_name}"
+                tag_name = create_experiment_tag(
+                    run_name=cv_run_name,
+                    metrics={
+                        "cv_mean_accuracy": aggregated["mean_val_accuracy"],
+                        "cv_mean_balanced_accuracy": aggregated["mean_val_balanced_accuracy"],
+                        "cv_mean_kappa": aggregated["mean_val_quadratic_kappa"],
+                        "test_accuracy": test_metrics["accuracy"],
+                        "test_balanced_accuracy": test_metrics["balanced_accuracy"],
+                        "test_kappa": test_metrics["quadratic_kappa"],
+                    },
+                    push=config.tracking.git_push,
+                )
+                if tracker:
+                    tracker.set_tags({"git_tag": tag_name})
+            except GitVersioningError as e:
+                print(f"Warning: Failed to create git tag: {e}")
 
         # Print final summary
         print("\n" + "=" * 80)

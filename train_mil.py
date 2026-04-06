@@ -36,8 +36,15 @@ import torch
 
 from data_loading.dataset import MILDataset
 from data_loading.pytorch_adapter import create_dataloader
-from training.config import ExperimentConfig, DataConfig, TrainConfig, TaskType
-from training.mlflow_tracking import MLflowTracker, create_tracker
+from training.config import ExperimentConfig, DataConfig, TrainConfig, TrackingConfig, TaskType
+from training.tracking import (
+    ExperimentTracker,
+    create_tracker,
+    get_git_info,
+    ensure_clean_repo,
+    create_experiment_tag,
+    GitVersioningError,
+)
 from training.trainer import MILTrainer
 from training.evaluator import evaluate, print_evaluation_results
 from training.utils import apply_grouping, save_predictions, save_results_summary
@@ -94,6 +101,7 @@ def _evaluate_and_save(
         results['labels'],
         results['predictions'],
         class_labels,
+        sample_ids=results.get('sample_ids'),
     )
     if is_test:
         print(f"Predictions saved to: {run_dir / 'predictions.npz'}")
@@ -138,7 +146,7 @@ def main(
     val_dataset=None,
     test_dataset=None,
     run_dir: Path = None,
-    tracker: MLflowTracker = None,
+    tracker: ExperimentTracker = None,
 ):
     """
     Main training function.
@@ -150,36 +158,47 @@ def main(
         val_dataset: Optional pre-split validation dataset (for CV)
         test_dataset: Optional pre-split test dataset (for CV)
         run_dir: Optional explicit run directory (for CV fold organization)
-        tracker: Optional MLflowTracker instance (for nested CV runs)
+        tracker: Optional ExperimentTracker instance (for nested CV runs)
 
     Returns:
         Tuple of (results dict, history dict, label_map dict)
     """
-    # Initialize MLflow tracker if not provided and enabled
+    # Check git state if tagging is enabled
+    if config.tracking and config.tracking.git_tag:
+        try:
+            ensure_clean_repo()
+        except GitVersioningError as e:
+            print(f"\nGit versioning error: {e}")
+            print("To disable this check, set 'git_tag: false' in your tracking config.\n")
+            raise
+
+    # Initialize tracker if not provided and enabled
     own_tracker = False
     if tracker is None:
         tracker = create_tracker(config)
         own_tracker = True
 
-    # Determine run name for MLflow
-    mlflow_run_name = config.run_name or config.model_name
+    # Determine run name
+    tracking_run_name = config.run_name or config.model_name
 
-    # Use MLflow context if tracker exists and we own it (not nested CV)
-    mlflow_context = (
+    # Use tracker context if tracker exists and we own it (not nested CV)
+    tracker_context = (
         tracker.start_run(
-            run_name=mlflow_run_name,
+            run_name=tracking_run_name,
             tags={"model_name": config.model_name, "task_type": config.train.task_type.value}
         )
         if tracker and own_tracker
         else nullcontext()
     )
 
-    with mlflow_context:
+    with tracker_context:
         # Log parameters at start of run
         if tracker and own_tracker:
+            # Log git info for reproducibility
+            tracker.log_params(get_git_info())
             tracker.log_params(config.to_mlflow_params())
 
-        return _train_and_evaluate(
+        results, history, label_map = _train_and_evaluate(
             config=config,
             checkpoint_path=checkpoint_path,
             train_dataset=train_dataset,
@@ -189,6 +208,25 @@ def main(
             tracker=tracker,
         )
 
+        # Create git tag after successful training (only if we own the tracker)
+        if own_tracker and config.tracking and config.tracking.git_tag:
+            try:
+                tag_name = create_experiment_tag(
+                    run_name=config.run_name or config.model_name,
+                    metrics={
+                        "accuracy": results["accuracy"],
+                        "balanced_accuracy": results["balanced_accuracy"],
+                        "quadratic_kappa": results["quadratic_kappa"],
+                    },
+                    push=config.tracking.git_push,
+                )
+                if tracker:
+                    tracker.set_tags({"git_tag": tag_name})
+            except GitVersioningError as e:
+                print(f"Warning: Failed to create git tag: {e}")
+
+        return results, history, label_map
+
 
 def _train_and_evaluate(
     config: ExperimentConfig,
@@ -197,7 +235,7 @@ def _train_and_evaluate(
     val_dataset=None,
     test_dataset=None,
     run_dir: Path = None,
-    tracker: MLflowTracker = None,
+    tracker: ExperimentTracker = None,
 ):
     """Internal function containing the actual training logic."""
     print("=" * 80)
@@ -540,8 +578,8 @@ if __name__ == '__main__':
         # Load from config file
         try:
             config = ExperimentConfig.load(args.config)
-        except FileNotFoundError:
-            print(f"Error: Config file not found: {args.config}")
+        except FileNotFoundError as e:
+            print(f"Error: {e}")
             exit(1)
         except json.JSONDecodeError as e:
             print(f"Error: Invalid JSON in config file: {args.config}")

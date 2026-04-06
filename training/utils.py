@@ -3,7 +3,7 @@
 import json
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 
 def apply_grouping(dataset, config):
@@ -42,7 +42,13 @@ def apply_grouping(dataset, config):
         return dataset
 
 
-def save_predictions(path: Path, labels: List[int], predictions: List[int], class_labels: List[str]):
+def save_predictions(
+    path: Path,
+    labels: List[int],
+    predictions: List[int],
+    class_labels: List[str],
+    sample_ids: Optional[List[str]] = None,
+):
     """
     Save predictions to npz file.
 
@@ -51,13 +57,17 @@ def save_predictions(path: Path, labels: List[int], predictions: List[int], clas
         labels: True labels
         predictions: Predicted labels
         class_labels: List of class label names
+        sample_ids: Optional list of sample identifiers (slide_id or group_id)
     """
-    np.savez(
-        path,
-        labels=labels,
-        predictions=predictions,
-        class_labels=class_labels,
-    )
+    save_dict = {
+        'labels': labels,
+        'predictions': predictions,
+        'class_labels': class_labels,
+    }
+    if sample_ids is not None:
+        save_dict['sample_ids'] = sample_ids
+
+    np.savez(path, **save_dict)
 
 
 def save_results_summary(path: Path, summary: Dict[str, Any]):

@@ -39,7 +39,7 @@ def evaluate(
         task_type: 'binary' or 'multiclass'
 
     Returns:
-        Dictionary containing metrics and predictions.
+        Dictionary containing metrics, predictions, and sample_ids.
     """
     model.eval()
     criterion = nn.CrossEntropyLoss()
@@ -47,9 +47,17 @@ def evaluate(
     all_preds = []
     all_labels = []
     all_logits = []
+    all_sample_ids = []
 
     with torch.no_grad():
-        for features, labels, *mask in tqdm(test_loader, desc='Evaluating'):
+        for batch in tqdm(test_loader, desc='Evaluating'):
+            # Handle both old format (features, labels, mask) and new (features, labels, mask, ids)
+            if len(batch) == 4:
+                features, labels, mask, sample_ids = batch
+                all_sample_ids.extend(sample_ids)
+            else:
+                features, labels, *rest = batch
+
             features = features.to(device)
             labels = labels.to(device)
 
@@ -89,11 +97,17 @@ def evaluate(
         num_classes=n_classes,
     )
 
-    return {
+    result = {
         **metrics,
         'predictions': all_preds,
         'labels': all_labels,
     }
+
+    # Include sample_ids if available
+    if all_sample_ids:
+        result['sample_ids'] = all_sample_ids
+
+    return result
 
 
 def calculate_metrics(

@@ -148,6 +148,7 @@ def main():
         results['labels'],
         results['predictions'],
         class_labels,
+        sample_ids=results.get('sample_ids'),
     )
     print(f"Predictions saved to: {output_dir / 'predictions.npz'}")
 
