@@ -1,0 +1,36 @@
+{
+  "data": {
+    "labels_csv": "labels.csv",
+    "features_dir": "/path/to/features/",
+    "split_column": "split",
+    "train_frac": 0.7,
+    "val_frac": 0.15,
+    "seed": 42,
+    "num_workers": 4
+  },
+  "train": {
+    "num_epochs": 20,
+    "batch_size": 1,
+    "learning_rate": 1e-4,
+    "weight_decay": 1e-5,
+    "early_stopping_patience": 5,
+    "min_epochs": 10,
+    "use_amp": true,
+    "task_type": "multiclass",
+    "early_stopping_metric": "kappa"
+  },
+  "model_name": "abmil.base.uni_v2.none",
+  "run_name": "example_wandb_run",
+  "num_classes": 6,
+  "output_dir": "experiments/example",
+  "tracking": {
+    "backend": "wandb",
+    "enabled": true,
+    "experiment_name": "mil-training",
+    "wandb_project": "computational-pathology",
+    "wandb_entity": null,
+    "offline_fallback": true,
+    "git_tag": true,
+    "git_push": false
+  }
+}

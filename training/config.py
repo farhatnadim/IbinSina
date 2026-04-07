@@ -10,8 +10,51 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional, Dict, Any, Literal
 from pathlib import Path
 from enum import Enum
+import warnings
 
+# Import for backward compatibility
 from .mlflow_tracking import MLflowConfig
+
+
+@dataclass
+class TrackingConfig:
+    """Unified tracking configuration for experiment tracking backends.
+
+    This config supports multiple tracking backends (MLflow, W&B) through
+    a single interface. Backend-specific settings are prefixed with the
+    backend name (e.g., wandb_project).
+
+    Example JSON config:
+        {
+            "tracking": {
+                "backend": "wandb",
+                "enabled": true,
+                "experiment_name": "panda-grading",
+                "wandb_project": "computational-pathology",
+                "wandb_entity": "my-team",
+                "git_tag": true
+            }
+        }
+    """
+
+    # General settings
+    backend: str = "mlflow"  # "mlflow", "wandb", or "none"
+    enabled: bool = True
+    experiment_name: str = "mil-training"
+
+    # MLflow-specific
+    tracking_uri: Optional[str] = None  # From env MLFLOW_TRACKING_URI if None
+    offline_fallback: bool = True
+    offline_dir: str = "mlflow_offline"
+
+    # W&B-specific
+    wandb_project: Optional[str] = None  # Defaults to experiment_name
+    wandb_entity: Optional[str] = None  # W&B team/user
+    wandb_offline_dir: str = "wandb_offline"
+
+    # Git versioning
+    git_tag: bool = False  # Auto-tag experiments with git
+    git_push: bool = False  # Auto-push tags to remote
 
 
 class TaskType(Enum):
@@ -81,9 +124,12 @@ class ExperimentConfig:
     model_name: str
     num_classes: int
     output_dir: str = 'experiments'
-    run_name: Optional[str] = None  # Name for the MLflow run (individual training)
+    run_name: Optional[str] = None  # Name for the run (individual training)
     num_heads: int = 1
-    mlflow: MLflowConfig = field(default_factory=MLflowConfig)
+    # New unified tracking config
+    tracking: Optional[TrackingConfig] = None
+    # Legacy mlflow config (deprecated, for backward compatibility)
+    mlflow: Optional[MLflowConfig] = None
 
     def __post_init__(self):
         # Create output directory
@@ -93,6 +139,27 @@ class ExperimentConfig:
         if self.run_name is None:
             model_short = self.model_name.replace('.', '_')
             self.run_name = f"{model_short}"
+
+        # Handle tracking configuration migration
+        if self.tracking is None and self.mlflow is not None:
+            # Migrate legacy mlflow config to new tracking config
+            warnings.warn(
+                "The 'mlflow' config field is deprecated. "
+                "Please use 'tracking' with 'backend': 'mlflow' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.tracking = TrackingConfig(
+                backend="mlflow",
+                enabled=self.mlflow.enabled,
+                experiment_name=self.mlflow.experiment_name,
+                offline_fallback=self.mlflow.offline_fallback,
+                tracking_uri=getattr(self.mlflow, "tracking_uri", None),
+                offline_dir=getattr(self.mlflow, "offline_dir", "mlflow_offline"),
+            )
+        elif self.tracking is None:
+            # Default tracking config
+            self.tracking = TrackingConfig()
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to flat dictionary (useful for MLflow logging)."""
@@ -152,8 +219,15 @@ class ExperimentConfig:
         with open(path, 'r') as f:
             data = json.load(f)
 
-        # Load mlflow config if present
-        mlflow_config = MLflowConfig(**data['mlflow']) if 'mlflow' in data else MLflowConfig()
+        # Load tracking config (new format)
+        tracking_config = None
+        if 'tracking' in data:
+            tracking_config = TrackingConfig(**data['tracking'])
+
+        # Load legacy mlflow config if present (for backward compatibility)
+        mlflow_config = None
+        if 'mlflow' in data and tracking_config is None:
+            mlflow_config = MLflowConfig(**data['mlflow'])
 
         return cls(
             data=DataConfig(**data['data']),
@@ -163,5 +237,6 @@ class ExperimentConfig:
             output_dir=data.get('output_dir', 'experiments'),
             run_name=data.get('run_name'),
             num_heads=data.get('num_heads', 1),
+            tracking=tracking_config,
             mlflow=mlflow_config,
         )

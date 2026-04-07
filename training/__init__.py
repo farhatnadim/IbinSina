@@ -20,13 +20,30 @@ from .config import (
     DataConfig,
     TrainConfig,
     ExperimentConfig,
+    TrackingConfig,
     TaskType,
 )
 
-from .mlflow_tracking import (
+# New tracking module (recommended)
+from .tracking import (
+    ExperimentTracker,
+    TrackerConfig,
     MLflowConfig,
     MLflowTracker,
+    WandBConfig,
+    WandBTracker,
     create_tracker,
+    get_available_backends,
+    register_tracker,
+    # Git versioning
+    GitVersioningError,
+    get_git_info,
+    has_uncommitted_changes,
+    is_git_repo,
+    ensure_clean_repo,
+    create_experiment_tag,
+    delete_experiment_tag,
+    list_experiment_tags,
 )
 
 from .trainer import MILTrainer
@@ -45,11 +62,27 @@ __all__ = [
     'DataConfig',
     'TrainConfig',
     'ExperimentConfig',
+    'TrackingConfig',
     'TaskType',
-    # MLflow
+    # Tracking (new)
+    'ExperimentTracker',
+    'TrackerConfig',
     'MLflowConfig',
     'MLflowTracker',
+    'WandBConfig',
+    'WandBTracker',
     'create_tracker',
+    'get_available_backends',
+    'register_tracker',
+    # Git versioning
+    'GitVersioningError',
+    'get_git_info',
+    'has_uncommitted_changes',
+    'is_git_repo',
+    'ensure_clean_repo',
+    'create_experiment_tag',
+    'delete_experiment_tag',
+    'list_experiment_tags',
     # Training
     'MILTrainer',
     # Evaluation
