@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MIL Trainer with early stopping, AMP, and MLflow-ready history tracking.
+MIL Trainer with early stopping, AMP, and real-time metric tracking.
 """
 
 import torch
@@ -9,11 +9,14 @@ import torch.optim as optim
 import numpy as np
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 from pathlib import Path
 
 from .config import TrainConfig, TaskType
 from .evaluator import calculate_metrics
+
+if TYPE_CHECKING:
+    from .tracking import ExperimentTracker
 
 
 class MILTrainer:
@@ -25,7 +28,7 @@ class MILTrainer:
     - Gradient clipping
     - Early stopping based on validation metric
     - Best model checkpointing
-    - History tracking (MLflow-ready)
+    - Real-time metric tracking (MLflow/W&B)
     """
 
     def __init__(
@@ -36,6 +39,7 @@ class MILTrainer:
         config: TrainConfig,
         device: torch.device,
         checkpoint_dir: Optional[str] = None,
+        tracker: Optional['ExperimentTracker'] = None,
     ):
         """
         Args:
@@ -45,12 +49,14 @@ class MILTrainer:
             config: Training configuration
             device: Device to train on
             checkpoint_dir: Directory to save checkpoints (optional)
+            tracker: Optional experiment tracker for real-time metric logging
         """
         self.model = model.to(device)
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.config = config
         self.device = device
+        self.tracker = tracker
 
         # Feature dropout (applied to input features)
         self.feature_dropout = nn.Dropout(p=config.feature_dropout).to(device)
@@ -137,6 +143,19 @@ class MILTrainer:
 
             # Print epoch summary
             self._print_epoch_summary(epoch, train_metrics, val_metrics)
+
+            # Log metrics to tracker (real-time)
+            if self.tracker:
+                epoch_metrics = {
+                    'train_loss': train_metrics['loss'],
+                    'val_loss': val_metrics['loss'],
+                    'learning_rate': self.optimizer.param_groups[0]['lr'],
+                }
+                # Add all validation metrics except confusion_matrix
+                for key, val in val_metrics.items():
+                    if key not in ['loss', 'confusion_matrix']:
+                        epoch_metrics[f'val_{key}'] = val
+                self.tracker.log_metrics(epoch_metrics, step=epoch)
 
             # Early stopping / checkpointing
             current_metric = self._get_early_stopping_metric(val_metrics)

@@ -401,29 +401,10 @@ def _train_and_evaluate(
         config=config.train,
         device=device,
         checkpoint_dir=run_dir,
+        tracker=tracker,  # Real-time per-epoch logging
     )
 
     history = trainer.fit()
-
-    # Log per-epoch metrics to MLflow
-    if tracker:
-        for epoch in range(len(history['train_loss'])):
-            epoch_metrics = {
-                'train_loss': history['train_loss'][epoch],
-                'val_loss': history['val_loss'][epoch],
-            }
-            # Add validation metrics if available
-            if 'val_accuracy' in history:
-                epoch_metrics['val_accuracy'] = history['val_accuracy'][epoch]
-            if 'val_balanced_accuracy' in history:
-                epoch_metrics['val_balanced_accuracy'] = history['val_balanced_accuracy'][epoch]
-            if 'val_quadratic_kappa' in history:
-                epoch_metrics['val_quadratic_kappa'] = history['val_quadratic_kappa'][epoch]
-            if 'val_auc' in history:
-                epoch_metrics['val_auc'] = history['val_auc'][epoch]
-            if 'learning_rate' in history:
-                epoch_metrics['learning_rate'] = history['learning_rate'][epoch]
-            tracker.log_metrics(epoch_metrics, step=epoch)
 
     # Load best model for evaluation
     trainer.load_best_model()
