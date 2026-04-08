@@ -104,7 +104,7 @@ def sample_labels_csv_multiclass(temp_dir):
 @pytest.fixture
 def sample_mil_dataset(sample_labels_csv, sample_features_dir):
     """Create a complete MIL dataset for testing."""
-    from data_loading.dataset import MILDataset
+    from downstream.classification.multiple_instance_learning.data_loading.dataset import MILDataset
     return MILDataset(sample_labels_csv, sample_features_dir)
 
 

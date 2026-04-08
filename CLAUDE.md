@@ -35,6 +35,24 @@ python train_mil_cv.py --config configs/panda_multiclass_config.json --num-folds
 python eval_mil.py --config config.json --checkpoint best_model.pth
 ```
 
+### Feature Extraction
+
+```bash
+# Extract features from WSIs using Trident
+python extract_features.py --config configs/extraction_panda_uni_v2.json
+
+# With CLI arguments
+python extract_features.py \
+    --wsi-dir /path/to/slides \
+    --output-dir /path/to/features \
+    --encoder uni_v2 \
+    --magnification 20 \
+    --patch-size 256
+
+# Resume interrupted extraction
+python extract_features.py --config config.json --resume
+```
+
 ### MLflow
 
 ```bash
@@ -49,21 +67,46 @@ python scripts/sync_mlflow_offline.py  # Sync offline runs to server
 
 ```
 IbinSina/
-├── train_mil.py              # Single-split training entry point
-├── train_mil_cv.py           # Cross-validation entry point
-├── eval_mil.py               # Model evaluation script
-├── training/                 # Training infrastructure
-│   ├── config.py             # ExperimentConfig, DataConfig, TrainConfig dataclasses
-│   ├── trainer.py            # MILTrainer with AMP, early stopping, gradient clipping
-│   ├── evaluator.py          # Metrics: accuracy, kappa, AUC, F1
-│   └── mlflow_tracking.py    # MLflowTracker with offline fallback
-├── data_loading/             # Data pipeline
-│   ├── dataset.py            # MILDataset, GroupedMILDataset, HierarchicalMILDataset
-│   ├── feature_loader.py     # CLAM H5 feature loading
-│   └── pytorch_adapter.py    # PyTorch wrappers, collation, weighted sampling
-├── configs/                  # JSON experiment configurations
-├── scripts/                  # MLflow server management
-└── docs/                     # mlflow_guide.md, FUSION_STRATEGIES.md
+├── train_mil.py                    # Single-split training entry point
+├── train_mil_cv.py                 # Cross-validation entry point
+├── eval_mil.py                     # Model evaluation script
+├── extract_features.py             # Feature extraction entry point
+│
+├── feature_extraction/             # Feature extraction from WSIs
+│   └── foundational_models/        # Trident-based extraction
+│       ├── config.py               # ExtractionConfig dataclasses
+│       └── extractor.py            # TridentExtractor wrapper
+│
+├── downstream/                     # Downstream analysis tasks
+│   └── classification/
+│       └── multiple_instance_learning/  # MIL training infrastructure
+│           ├── training/           # Training pipeline
+│           │   ├── config.py       # ExperimentConfig, DataConfig, TrainConfig
+│           │   ├── trainer.py      # MILTrainer with AMP, early stopping
+│           │   ├── evaluator.py    # Metrics: accuracy, kappa, AUC, F1
+│           │   ├── encoder_mapping.py  # Encoder dimension lookups
+│           │   └── tracking/       # Pluggable tracking (MLflow, W&B)
+│           └── data_loading/       # Data pipeline
+│               ├── dataset.py      # MILDataset, GroupedMILDataset, HierarchicalMILDataset
+│               ├── feature_loader.py   # CLAM H5 feature loading
+│               └── pytorch_adapter.py  # PyTorch wrappers, collation
+│
+├── src/                            # External MIL-Lab package
+├── configs/                        # JSON experiment configurations
+├── scripts/                        # MLflow server management
+└── docs/                           # mlflow_guide.md, FUSION_STRATEGIES.md
+```
+
+### Import Paths
+
+```python
+# Feature extraction
+from feature_extraction.foundational_models import ExtractionConfig, TridentExtractor
+
+# MIL training
+from downstream.classification.multiple_instance_learning.training.config import ExperimentConfig
+from downstream.classification.multiple_instance_learning.training.trainer import MILTrainer
+from downstream.classification.multiple_instance_learning.data_loading.dataset import MILDataset
 ```
 
 ### Data Loading Pipeline
@@ -115,7 +158,8 @@ Configs are JSON files loaded via `ExperimentConfig.load(path)`:
   "num_classes": 6,
   "output_dir": "experiments/my_experiment",
   "run_name": "experiment_name",
-  "mlflow": {
+  "tracking": {
+    "backend": "mlflow",
     "enabled": true,
     "experiment_name": "my-experiment-group",
     "offline_fallback": true
@@ -125,9 +169,49 @@ Configs are JSON files loaded via `ExperimentConfig.load(path)`:
 
 Key fields:
 - `run_name`: Individual run name (shown in MLflow)
-- `mlflow.experiment_name`: Groups related runs
+- `tracking.experiment_name`: Groups related runs
+- `tracking.backend`: "mlflow", "wandb", or "none"
 - `train.task_type`: "binary" or "multiclass"
 - `train.early_stopping_metric`: "kappa", "balanced_accuracy", "auc", "f1_macro", "accuracy", or "auto"
+
+### Feature Extraction Configuration
+
+Extraction configs are loaded via `ExtractionConfig.load(path)`:
+
+```json
+{
+  "input": {
+    "wsi_dir": "/data/slides",
+    "wsi_extensions": [".svs", ".ndpi", ".tiff"]
+  },
+  "segmentation": {
+    "model": "grandqc",
+    "magnification": 10
+  },
+  "patching": {
+    "magnification": 20,
+    "patch_size": 256,
+    "overlap": 0
+  },
+  "encoder": {
+    "name": "uni_v2",
+    "precision": "fp16",
+    "batch_size": 512
+  },
+  "processing": {
+    "device": "cuda:0",
+    "resume": true
+  },
+  "output_dir": "/data/features",
+  "tracking": {
+    "backend": "mlflow",
+    "enabled": true,
+    "experiment_name": "feature-extraction"
+  }
+}
+```
+
+Supported encoders: uni_v2, conch_v15, gigapath, virchow2, hoptimus0, phikon_v2, and more (see `encoder_mapping.py`)
 
 ## Code Style
 
@@ -148,3 +232,18 @@ experiments/run_YYYYMMDD_HHMMSS/
 ```
 
 Cross-validation adds fold subdirectories and `cv_results.json` with aggregated metrics.
+
+Feature extraction outputs follow Trident's naming convention:
+```
+output_dir/
+  {magnification}x_{patch_size}px_{overlap}px_overlap/
+    segmentation/                # Tissue masks
+    patch_coords/                # Patch coordinate H5s
+    stitches/                    # Patch visualizations
+    features_{encoder_name}/     # Feature H5s (MIL-ready)
+      slide_001.h5               # Contains:
+        └── features [M, D]      #   Patch embeddings
+        └── coords [M, 2]        #   Patch coordinates
+    extraction_metadata.json     # Stats and config
+    extraction_config.json       # Full config snapshot
+```

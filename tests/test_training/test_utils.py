@@ -6,7 +6,7 @@ import numpy as np
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from training.utils import apply_grouping, save_predictions, save_results_summary
+from downstream.classification.multiple_instance_learning.training.utils import apply_grouping, save_predictions, save_results_summary
 
 
 class TestApplyGrouping:
@@ -22,7 +22,7 @@ class TestApplyGrouping:
         result = apply_grouping(sample_mil_dataset, mock_config)
 
         # Should return GroupedMILDataset (concatenated)
-        from data_loading.dataset import GroupedMILDataset
+        from downstream.classification.multiple_instance_learning.data_loading.dataset import GroupedMILDataset
         assert isinstance(result, GroupedMILDataset)
 
     def test_apply_grouping_late_fusion(self, sample_mil_dataset, capsys):
@@ -35,7 +35,7 @@ class TestApplyGrouping:
         result = apply_grouping(sample_mil_dataset, mock_config)
 
         # Should return HierarchicalMILDataset
-        from data_loading.dataset import HierarchicalMILDataset
+        from downstream.classification.multiple_instance_learning.data_loading.dataset import HierarchicalMILDataset
         assert isinstance(result, HierarchicalMILDataset)
 
     def test_apply_grouping_no_groups(self, sample_mil_dataset, capsys):
@@ -76,7 +76,7 @@ class TestApplyGrouping:
             with h5py.File(features_dir / f"{slide_id}.h5", 'w') as f:
                 f.create_dataset('features', data=np.zeros((10, 64)))
 
-        from data_loading.dataset import MILDataset
+        from downstream.classification.multiple_instance_learning.data_loading.dataset import MILDataset
         dataset = MILDataset(csv_path, features_dir)
 
         mock_config = MagicMock()

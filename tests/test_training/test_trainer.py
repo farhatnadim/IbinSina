@@ -7,8 +7,8 @@ import numpy as np
 from unittest.mock import MagicMock, patch
 from pathlib import Path
 
-from training.trainer import MILTrainer
-from training.config import TrainConfig, TaskType
+from downstream.classification.multiple_instance_learning.training.trainer import MILTrainer
+from downstream.classification.multiple_instance_learning.training.config import TrainConfig, TaskType
 
 
 class TestMILTrainerInit:
@@ -16,7 +16,7 @@ class TestMILTrainerInit:
 
     def test_trainer_init(self, mock_model, sample_mil_dataset):
         """Test basic trainer initialization."""
-        from data_loading.pytorch_adapter import create_dataloader
+        from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import create_dataloader
 
         train_loader, _ = create_dataloader(
             sample_mil_dataset, batch_size=1, shuffle=False, num_workers=0
@@ -45,7 +45,7 @@ class TestMILTrainerInit:
 
     def test_trainer_init_with_checkpoint_dir(self, mock_model, sample_mil_dataset, temp_dir):
         """Test trainer with checkpoint directory."""
-        from data_loading.pytorch_adapter import create_dataloader
+        from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import create_dataloader
 
         train_loader, _ = create_dataloader(
             sample_mil_dataset, batch_size=1, shuffle=False, num_workers=0
@@ -71,7 +71,7 @@ class TestMILTrainerInit:
 
     def test_trainer_init_with_tracker(self, mock_model, sample_mil_dataset):
         """Test trainer with mock tracker."""
-        from data_loading.pytorch_adapter import create_dataloader
+        from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import create_dataloader
 
         train_loader, _ = create_dataloader(
             sample_mil_dataset, batch_size=1, shuffle=False, num_workers=0
@@ -101,7 +101,7 @@ class TestMILTrainerFit:
 
     def test_trainer_fit_one_epoch(self, mock_model, sample_mil_dataset):
         """Test that single epoch training completes."""
-        from data_loading.pytorch_adapter import create_dataloader
+        from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import create_dataloader
 
         train_loader, _ = create_dataloader(
             sample_mil_dataset, batch_size=1, shuffle=False, num_workers=0
@@ -132,7 +132,7 @@ class TestMILTrainerFit:
 
     def test_trainer_early_stopping(self, sample_mil_dataset, temp_dir):
         """Test that early stopping triggers correctly."""
-        from data_loading.pytorch_adapter import create_dataloader
+        from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import create_dataloader
 
         # Create a model that always produces same output (no improvement)
         # Must have at least one parameter for optimizer and proper gradient flow
@@ -184,7 +184,7 @@ class TestMILTrainerFit:
 
     def test_trainer_with_tracker_logs_metrics(self, mock_model, sample_mil_dataset):
         """Test that trainer logs metrics to tracker."""
-        from data_loading.pytorch_adapter import create_dataloader
+        from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import create_dataloader
 
         train_loader, _ = create_dataloader(
             sample_mil_dataset, batch_size=1, shuffle=False, num_workers=0
@@ -216,7 +216,7 @@ class TestMILTrainerFit:
 
     def test_trainer_without_tracker(self, mock_model, sample_mil_dataset):
         """Test trainer works with tracker=None."""
-        from data_loading.pytorch_adapter import create_dataloader
+        from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import create_dataloader
 
         train_loader, _ = create_dataloader(
             sample_mil_dataset, batch_size=1, shuffle=False, num_workers=0
@@ -249,7 +249,7 @@ class TestMILTrainerCheckpoint:
 
     def test_trainer_checkpoint_save_load(self, mock_model, sample_mil_dataset, temp_dir):
         """Test checkpoint round-trip."""
-        from data_loading.pytorch_adapter import create_dataloader
+        from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import create_dataloader
 
         train_loader, _ = create_dataloader(
             sample_mil_dataset, batch_size=1, shuffle=False, num_workers=0
@@ -293,7 +293,7 @@ class TestMILTrainerCheckpoint:
 
     def test_trainer_load_best_model(self, mock_model, sample_mil_dataset, temp_dir):
         """Test loading best model from checkpoint."""
-        from data_loading.pytorch_adapter import create_dataloader
+        from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import create_dataloader
 
         train_loader, _ = create_dataloader(
             sample_mil_dataset, batch_size=1, shuffle=False, num_workers=0
@@ -326,7 +326,7 @@ class TestMILTrainerMetricResolution:
 
     def test_resolve_metric_binary_auto(self, mock_model, sample_mil_dataset):
         """Test auto metric resolution for binary task."""
-        from data_loading.pytorch_adapter import create_dataloader
+        from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import create_dataloader
 
         train_loader, _ = create_dataloader(
             sample_mil_dataset, batch_size=1, shuffle=False, num_workers=0
@@ -355,7 +355,7 @@ class TestMILTrainerMetricResolution:
 
     def test_resolve_metric_multiclass_auto(self, mock_model, sample_mil_dataset):
         """Test auto metric resolution for multiclass task."""
-        from data_loading.pytorch_adapter import create_dataloader
+        from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import create_dataloader
 
         train_loader, _ = create_dataloader(
             sample_mil_dataset, batch_size=1, shuffle=False, num_workers=0
@@ -384,7 +384,7 @@ class TestMILTrainerMetricResolution:
 
     def test_resolve_metric_explicit(self, mock_model, sample_mil_dataset):
         """Test explicit metric specification."""
-        from data_loading.pytorch_adapter import create_dataloader
+        from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import create_dataloader
 
         train_loader, _ = create_dataloader(
             sample_mil_dataset, batch_size=1, shuffle=False, num_workers=0

@@ -1,0 +1,38 @@
+{
+  "input": {
+    "wsi_dir": "/data/panda/wsis",
+    "wsi_extensions": [".tiff"],
+    "slide_list": null,
+    "search_nested": false
+  },
+  "segmentation": {
+    "model": "grandqc",
+    "magnification": 10,
+    "batch_size": 16
+  },
+  "patching": {
+    "magnification": 20,
+    "patch_size": 256,
+    "overlap": 0,
+    "min_tissue_proportion": 0.0
+  },
+  "encoder": {
+    "name": "uni_v2",
+    "precision": "fp16",
+    "batch_size": 512
+  },
+  "processing": {
+    "device": "cuda:0",
+    "num_workers": 4,
+    "skip_errors": true,
+    "resume": true
+  },
+  "output_dir": "/data/panda/features",
+  "run_name": "panda_uni_v2_20x",
+  "tracking": {
+    "backend": "mlflow",
+    "enabled": true,
+    "experiment_name": "feature-extraction",
+    "offline_fallback": true
+  }
+}

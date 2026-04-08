@@ -5,7 +5,7 @@ import torch
 import numpy as np
 from unittest.mock import MagicMock
 
-from data_loading.pytorch_adapter import (
+from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import (
     MILDatasetAdapter,
     HierarchicalMILDatasetAdapter,
     mil_collate_fn,

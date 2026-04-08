@@ -7,7 +7,7 @@ from .mlflow_tracker import MLflowConfig, MLflowTracker
 from .wandb_tracker import WandBConfig, WandBTracker
 
 if TYPE_CHECKING:
-    from training.config import ExperimentConfig, TrackingConfig
+    from ..config import ExperimentConfig, TrackingConfig
 
 # Registry mapping backend names to (TrackerClass, ConfigClass) tuples
 # None indicates tracking is disabled for that backend

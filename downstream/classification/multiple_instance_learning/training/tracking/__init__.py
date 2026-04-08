@@ -5,7 +5,10 @@ that supports multiple backends (MLflow, Weights & Biases) and includes
 git tagging for reproducibility.
 
 Example usage:
-    from training.tracking import create_tracker, get_git_info
+    from downstream.classification.multiple_instance_learning.training.tracking import (
+        create_tracker,
+        get_git_info,
+    )
 
     # Create tracker from config
     tracker = create_tracker(config)

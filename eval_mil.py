@@ -25,11 +25,14 @@ from pathlib import Path
 
 import torch
 
-from data_loading.dataset import MILDataset
-from data_loading.pytorch_adapter import create_dataloader
-from training.config import ExperimentConfig
-from training.evaluator import evaluate, print_evaluation_results
-from training.utils import save_predictions
+from downstream.classification.multiple_instance_learning.data_loading.dataset import MILDataset
+from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import create_dataloader
+from downstream.classification.multiple_instance_learning.training.config import ExperimentConfig
+from downstream.classification.multiple_instance_learning.training.evaluator import (
+    evaluate,
+    print_evaluation_results,
+)
+from downstream.classification.multiple_instance_learning.training.utils import save_predictions
 from src.builder import create_model
 
 

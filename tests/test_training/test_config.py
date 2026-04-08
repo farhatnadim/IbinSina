@@ -5,7 +5,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from training.config import (
+from downstream.classification.multiple_instance_learning.training.config import (
     DataConfig,
     TrainConfig,
     ExperimentConfig,

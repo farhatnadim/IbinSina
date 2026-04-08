@@ -34,10 +34,16 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from data_loading.dataset import MILDataset
-from data_loading.pytorch_adapter import create_dataloader
-from training.config import ExperimentConfig, DataConfig, TrainConfig, TrackingConfig, TaskType
-from training.tracking import (
+from downstream.classification.multiple_instance_learning.data_loading.dataset import MILDataset
+from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import create_dataloader
+from downstream.classification.multiple_instance_learning.training.config import (
+    ExperimentConfig,
+    DataConfig,
+    TrainConfig,
+    TrackingConfig,
+    TaskType,
+)
+from downstream.classification.multiple_instance_learning.training.tracking import (
     ExperimentTracker,
     create_tracker,
     get_git_info,
@@ -45,9 +51,19 @@ from training.tracking import (
     create_experiment_tag,
     GitVersioningError,
 )
-from training.trainer import MILTrainer
-from training.evaluator import evaluate, print_evaluation_results
-from training.utils import apply_grouping, save_predictions, save_results_summary
+from downstream.classification.multiple_instance_learning.training.trainer import MILTrainer
+from downstream.classification.multiple_instance_learning.training.evaluator import (
+    evaluate,
+    print_evaluation_results,
+)
+from downstream.classification.multiple_instance_learning.training.utils import (
+    apply_grouping,
+    save_predictions,
+    save_results_summary,
+)
+from downstream.classification.multiple_instance_learning.training.encoder_mapping import (
+    validate_encoder_consistency,
+)
 from src.builder import create_model
 
 
@@ -181,11 +197,25 @@ def main(
     # Determine run name
     tracking_run_name = config.run_name or config.model_name
 
+    # Build tags for tracking
+    tracking_tags = {
+        "model_name": config.model_name,
+        "task_type": config.train.task_type.value,
+        "mil_model": config._parse_model_name().get('mil_model', 'unknown'),
+    }
+    # Add encoder metadata to tags
+    encoder_name = config._get_encoder_name()
+    if encoder_name:
+        tracking_tags["encoder"] = encoder_name
+    # Add dataset tag if available
+    if config.data.dataset_name:
+        tracking_tags["dataset"] = config.data.dataset_name
+
     # Use tracker context if tracker exists and we own it (not nested CV)
     tracker_context = (
         tracker.start_run(
             run_name=tracking_run_name,
-            tags={"model_name": config.model_name, "task_type": config.train.task_type.value}
+            tags=tracking_tags,
         )
         if tracker and own_tracker
         else nullcontext()
@@ -303,6 +333,16 @@ def _train_and_evaluate(
 
         dataset = apply_grouping(dataset, config)
 
+        # Validate encoder consistency if config specifies encoder
+        if config.encoder is not None:
+            is_valid, msg = validate_encoder_consistency(
+                config.model_name,
+                config.encoder.name,
+                dataset.embed_dim,
+            )
+            if not is_valid:
+                print(f"Warning: {msg}")
+
         print(f"Dataset type: {type(dataset).__name__}")
         print(f"Total samples: {len(dataset)}")
         print(f"Embed dim: {dataset.embed_dim}")
@@ -326,6 +366,7 @@ def _train_and_evaluate(
 
     # Create dataloaders
     print("\nCreating dataloaders...")
+
     train_loader, train_adapter = create_dataloader(
         splits['train'],
         batch_size=config.train.batch_size,
@@ -386,6 +427,7 @@ def _train_and_evaluate(
         print(f"Loading model from local checkpoint: {checkpoint_path}")
         model_kwargs['checkpoint_path'] = checkpoint_path
 
+    # Create the MIL aggregation model
     model = create_model(config.model_name, **model_kwargs).to(device)
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 

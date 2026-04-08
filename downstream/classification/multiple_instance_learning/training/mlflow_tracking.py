@@ -1,18 +1,18 @@
 """MLflow tracking wrapper - DEPRECATED.
 
-This module is deprecated. Please use `training.tracking` instead.
+This module is deprecated. Please use the tracking submodule instead.
 
 For backward compatibility, this module re-exports the MLflow tracker
 and create_tracker function from the new tracking module.
 
 Migration guide:
     # Old (deprecated)
-    from training.mlflow_tracking import MLflowTracker, create_tracker
+    from ...training.mlflow_tracking import MLflowTracker, create_tracker
 
     # New (recommended)
-    from training.tracking import MLflowTracker, create_tracker
+    from ...training.tracking import MLflowTracker, create_tracker
     # Or for backend-agnostic tracking:
-    from training.tracking import create_tracker  # Works with any backend
+    from ...training.tracking import create_tracker  # Works with any backend
 """
 
 import warnings

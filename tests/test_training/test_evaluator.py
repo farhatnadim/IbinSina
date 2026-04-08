@@ -5,7 +5,7 @@ import torch
 import numpy as np
 from unittest.mock import MagicMock, patch
 
-from training.evaluator import calculate_metrics, evaluate, _compute_auc_safe
+from downstream.classification.multiple_instance_learning.training.evaluator import calculate_metrics, evaluate, _compute_auc_safe
 
 
 class TestCalculateMetrics:

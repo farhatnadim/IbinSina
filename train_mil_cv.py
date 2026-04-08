@@ -39,10 +39,15 @@ from pathlib import Path
 from tqdm import tqdm
 from typing import Dict, List, Any
 
-from data_loading.dataset import MILDataset
-from data_loading.pytorch_adapter import create_dataloader
-from training.config import ExperimentConfig, DataConfig, TrainConfig, TaskType
-from training.tracking import (
+from downstream.classification.multiple_instance_learning.data_loading.dataset import MILDataset
+from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import create_dataloader
+from downstream.classification.multiple_instance_learning.training.config import (
+    ExperimentConfig,
+    DataConfig,
+    TrainConfig,
+    TaskType,
+)
+from downstream.classification.multiple_instance_learning.training.tracking import (
     ExperimentTracker,
     create_tracker,
     get_git_info,
@@ -50,8 +55,14 @@ from training.tracking import (
     create_experiment_tag,
     GitVersioningError,
 )
-from training.evaluator import evaluate, calculate_metrics
-from training.utils import apply_grouping
+from downstream.classification.multiple_instance_learning.training.evaluator import (
+    evaluate,
+    calculate_metrics,
+)
+from downstream.classification.multiple_instance_learning.training.utils import apply_grouping
+from downstream.classification.multiple_instance_learning.training.encoder_mapping import (
+    validate_encoder_consistency,
+)
 from src.builder import create_model
 import train_mil
 
@@ -307,6 +318,16 @@ def main():
 
     dataset = apply_grouping(dataset, config)
 
+    # Validate encoder consistency if config specifies encoder
+    if config.encoder is not None:
+        is_valid, msg = validate_encoder_consistency(
+            config.model_name,
+            config.encoder.name,
+            dataset.embed_dim,
+        )
+        if not is_valid:
+            print(f"Warning: {msg}")
+
     print(f"\nDataset type: {type(dataset).__name__}")
     print(f"Total samples: {len(dataset)}")
     print(f"Embed dim: {dataset.embed_dim}")
@@ -336,15 +357,26 @@ def main():
     # Initialize MLflow tracker for CV parent run
     tracker = create_tracker(config)
 
+    # Build tags for tracking
+    tracking_tags = {
+        "model_name": config.model_name,
+        "task_type": config.train.task_type.value,
+        "cv_run": "true",
+        "mil_model": config._parse_model_name().get('mil_model', 'unknown'),
+    }
+    # Add encoder metadata to tags
+    encoder_name = config._get_encoder_name()
+    if encoder_name:
+        tracking_tags["encoder"] = encoder_name
+    # Add dataset tag if available
+    if config.data.dataset_name:
+        tracking_tags["dataset"] = config.data.dataset_name
+
     # Use MLflow context for parent CV run
     mlflow_context = (
         tracker.start_run(
             run_name=f"CV_{config.model_name}",
-            tags={
-                "model_name": config.model_name,
-                "task_type": config.train.task_type.value,
-                "cv_run": "true",
-            }
+            tags=tracking_tags,
         )
         if tracker
         else nullcontext()

@@ -5,8 +5,8 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from training.tracking.mlflow_tracker import MLflowTracker, MLflowConfig
-from training.tracking.wandb_tracker import WandBTracker, WandBConfig
+from downstream.classification.multiple_instance_learning.training.tracking.mlflow_tracker import MLflowTracker, MLflowConfig
+from downstream.classification.multiple_instance_learning.training.tracking.wandb_tracker import WandBTracker, WandBConfig
 
 
 class TestMLflowTracker:

@@ -46,13 +46,13 @@ from typing import List, Optional, Tuple
 import torch
 import torch.nn.functional as F
 
-from data_loading.feature_loader import (
+from downstream.classification.multiple_instance_learning.data_loading.feature_loader import (
     CLAMFeatureLoader,
     get_slide_ids,
     load_features,
     prepare_for_mil,
 )
-from training.config import ExperimentConfig
+from downstream.classification.multiple_instance_learning.training.config import ExperimentConfig
 from src.builder import create_model
 
 

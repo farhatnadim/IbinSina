@@ -4,14 +4,14 @@ import pytest
 from unittest.mock import MagicMock, patch
 from dataclasses import dataclass
 
-from training.tracking.factory import (
+from downstream.classification.multiple_instance_learning.training.tracking.factory import (
     create_tracker,
     get_available_backends,
     register_tracker,
     TRACKER_REGISTRY,
 )
-from training.tracking.base import ExperimentTracker, TrackerConfig
-from training.config import ExperimentConfig, TrackingConfig, DataConfig, TrainConfig
+from downstream.classification.multiple_instance_learning.training.tracking.base import ExperimentTracker, TrackerConfig
+from downstream.classification.multiple_instance_learning.training.config import ExperimentConfig, TrackingConfig, DataConfig, TrainConfig
 
 
 class TestCreateTracker:
@@ -54,7 +54,7 @@ class TestCreateTracker:
 
         # Should create a tracker (may be in offline mode)
         if tracker is not None:
-            from training.tracking import MLflowTracker
+            from downstream.classification.multiple_instance_learning.training.tracking import MLflowTracker
             assert isinstance(tracker, MLflowTracker)
 
     def test_create_tracker_none_backend(self, sample_labels_csv, sample_features_dir, temp_dir):
@@ -95,7 +95,7 @@ class TestCreateTracker:
 
         tracker = create_tracker(config)
 
-        from training.tracking import MLflowTracker
+        from downstream.classification.multiple_instance_learning.training.tracking import MLflowTracker
         assert isinstance(tracker, MLflowTracker)
 
     def test_create_tracker_wandb(self, sample_labels_csv, sample_features_dir, temp_dir):
@@ -118,7 +118,7 @@ class TestCreateTracker:
 
         tracker = create_tracker(config)
 
-        from training.tracking import WandBTracker
+        from downstream.classification.multiple_instance_learning.training.tracking import WandBTracker
         assert isinstance(tracker, WandBTracker)
 
     def test_create_tracker_unknown_backend(self, sample_labels_csv, sample_features_dir, temp_dir):

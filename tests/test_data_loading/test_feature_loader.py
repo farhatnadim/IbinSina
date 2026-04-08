@@ -6,7 +6,7 @@ import numpy as np
 import h5py
 from pathlib import Path
 
-from data_loading.feature_loader import (
+from downstream.classification.multiple_instance_learning.data_loading.feature_loader import (
     load_features,
     load_features_batch,
     get_slide_ids,

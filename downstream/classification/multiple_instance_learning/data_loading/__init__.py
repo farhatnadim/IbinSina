@@ -1,5 +1,5 @@
 """
-Data loading utilities for MIL-Lab.
+Data loading utilities for MIL training.
 
 Supports multiple levels of aggregation:
     1. Slide-level: MILDataset (one bag per H5 file)
@@ -7,7 +7,10 @@ Supports multiple levels of aggregation:
     3. Hierarchical: HierarchicalMILDataset via .group_by() (preserves structure)
 
 Usage:
-    from data_loading import MILDataset, create_dataloader
+    from downstream.classification.multiple_instance_learning.data_loading import (
+        MILDataset,
+        create_dataloader,
+    )
 
     # Slide-level (e.g., PANDA: 1 patient = 1 slide)
     dataset = MILDataset('labels.csv', 'features/')

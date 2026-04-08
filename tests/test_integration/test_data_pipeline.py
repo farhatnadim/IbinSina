@@ -5,13 +5,13 @@ import torch
 import numpy as np
 from pathlib import Path
 
-from data_loading.dataset import MILDataset, GroupedMILDataset, HierarchicalMILDataset
-from data_loading.pytorch_adapter import (
+from downstream.classification.multiple_instance_learning.data_loading.dataset import MILDataset, GroupedMILDataset, HierarchicalMILDataset
+from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import (
     create_dataloader,
     MILDatasetAdapter,
     HierarchicalMILDatasetAdapter,
 )
-from data_loading.feature_loader import load_features, get_embed_dim
+from downstream.classification.multiple_instance_learning.data_loading.feature_loader import load_features, get_embed_dim
 
 
 class TestCSVToDataloader:

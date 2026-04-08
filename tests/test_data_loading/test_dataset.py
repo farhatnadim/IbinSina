@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from data_loading.dataset import (
+from downstream.classification.multiple_instance_learning.data_loading.dataset import (
     MILDataset,
     GroupedMILDataset,
     HierarchicalMILDataset,
@@ -334,10 +334,10 @@ class TestBackwardCompatibility:
 
     def test_case_data_alias(self):
         """Test CaseData alias."""
-        from data_loading.dataset import CaseData, GroupedData
+        from downstream.classification.multiple_instance_learning.data_loading.dataset import CaseData, GroupedData
         assert CaseData is GroupedData
 
     def test_case_mil_dataset_alias(self):
         """Test CaseMILDataset alias."""
-        from data_loading.dataset import CaseMILDataset, GroupedMILDataset
+        from downstream.classification.multiple_instance_learning.data_loading.dataset import CaseMILDataset, GroupedMILDataset
         assert CaseMILDataset is GroupedMILDataset

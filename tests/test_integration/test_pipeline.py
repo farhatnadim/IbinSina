@@ -7,11 +7,11 @@ import numpy as np
 import json
 from pathlib import Path
 
-from training.config import ExperimentConfig, DataConfig, TrainConfig, TrackingConfig, TaskType
-from training.trainer import MILTrainer
-from training.evaluator import evaluate
-from data_loading.dataset import MILDataset
-from data_loading.pytorch_adapter import create_dataloader
+from downstream.classification.multiple_instance_learning.training.config import ExperimentConfig, DataConfig, TrainConfig, TrackingConfig, TaskType
+from downstream.classification.multiple_instance_learning.training.trainer import MILTrainer
+from downstream.classification.multiple_instance_learning.training.evaluator import evaluate
+from downstream.classification.multiple_instance_learning.data_loading.dataset import MILDataset
+from downstream.classification.multiple_instance_learning.data_loading.pytorch_adapter import create_dataloader
 
 
 class MockMILModel(nn.Module):
@@ -275,7 +275,7 @@ class TestPredictionsFormat:
 
     def test_predictions_npz_format(self, sample_mil_dataset, temp_dir):
         """Verify output file format."""
-        from training.utils import save_predictions
+        from downstream.classification.multiple_instance_learning.training.utils import save_predictions
 
         # Simulate predictions
         labels = [0, 1, 0, 1]

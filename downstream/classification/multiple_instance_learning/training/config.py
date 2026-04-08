@@ -14,6 +14,7 @@ import warnings
 
 # Import for backward compatibility
 from .mlflow_tracking import MLflowConfig
+from .encoder_mapping import get_encoder_dim, parse_encoder_from_model_name
 
 
 @dataclass
@@ -64,10 +65,35 @@ class TaskType(Enum):
 
 
 @dataclass
+class EncoderConfig:
+    """Encoder configuration for metadata and validation.
+
+    Used for logging encoder information and validating feature dimensions.
+    The encoder name can be auto-parsed from model_name if not specified.
+
+    Attributes:
+        name: Encoder name (e.g., 'uni_v2', 'conch_v15')
+        expected_dim: Auto-populated from ENCODER_DIM_MAPPING
+    """
+    name: str
+    expected_dim: Optional[int] = None
+
+    def __post_init__(self):
+        # Auto-populate expected_dim from mapping
+        if self.expected_dim is None:
+            self.expected_dim = get_encoder_dim(self.name)
+
+
+@dataclass
 class DataConfig:
-    """Configuration for data loading."""
+    """Configuration for data loading.
+
+    Uses pre-extracted H5 features from features_dir.
+    """
     labels_csv: str
-    features_dir: str
+    features_dir: str  # Directory containing H5 feature files
+    dataset_name: Optional[str] = None  # Human-readable dataset ID (e.g., 'panda', 'camelyon16')
+    # Split settings
     split_column: Optional[str] = None  # If set, use this column for splits
     split_dir: Optional[str] = None     # If set, load pre-generated JSON splits
     fold: Optional[int] = None          # Specific fold to load if split_dir is set
@@ -77,7 +103,7 @@ class DataConfig:
     num_workers: int = 4
     hierarchical: bool = False
     group_column: str = 'case_id'
-    fusion: str = 'early' # 'early' or 'late'
+    fusion: str = 'early'  # 'early' or 'late'
     # Cross-validation settings
     num_folds: int = 5
     test_frac: float = 0.2
@@ -87,6 +113,7 @@ class DataConfig:
         # Validate paths exist
         if not Path(self.labels_csv).exists():
             raise FileNotFoundError(f"Labels CSV not found: {self.labels_csv}")
+
         if not Path(self.features_dir).exists():
             raise FileNotFoundError(f"Features dir not found: {self.features_dir}")
 
@@ -126,6 +153,8 @@ class ExperimentConfig:
     output_dir: str = 'experiments'
     run_name: Optional[str] = None  # Name for the run (individual training)
     num_heads: int = 1
+    # Encoder configuration (for Trident integration)
+    encoder: Optional[EncoderConfig] = None
     # New unified tracking config
     tracking: Optional[TrackingConfig] = None
     # Legacy mlflow config (deprecated, for backward compatibility)
@@ -172,9 +201,28 @@ class ExperimentConfig:
                 result[key] = value
         return result
 
+    def _parse_model_name(self) -> Dict[str, str]:
+        """Parse model_name into components.
+
+        Format: <mil_model>.<config>.<encoder>.<pretrain>
+        Example: abmil.base.uni_v2.pc108-24k
+
+        Returns:
+            Dictionary with keys: mil_model, model_config, encoder, pretrain
+        """
+        parts = self.model_name.split('.')
+        if len(parts) >= 4:
+            return {
+                'mil_model': parts[0],      # abmil, transmil, clam, etc.
+                'model_config': parts[1],   # base, sb, etc.
+                'encoder': parts[2],        # uni_v2, conch_v15, etc.
+                'pretrain': parts[3],       # none, pc108-24k, etc.
+            }
+        return {'mil_model': self.model_name}
+
     def to_mlflow_params(self) -> Dict[str, Any]:
         """Flatten config to MLflow params dict (excludes mlflow config itself)."""
-        return {
+        params = {
             "model_name": self.model_name,
             "num_classes": self.num_classes,
             "num_heads": self.num_heads,
@@ -193,6 +241,38 @@ class ExperimentConfig:
             "data.fusion": self.data.fusion,
             "data.num_workers": self.data.num_workers,
         }
+
+        # Add parsed model components
+        parsed = self._parse_model_name()
+        params["mil_model"] = parsed.get('mil_model')
+        params["pretrain"] = parsed.get('pretrain', 'none')
+
+        # Add encoder metadata
+        encoder_name = self._get_encoder_name()
+        if encoder_name:
+            params["encoder.name"] = encoder_name
+            encoder_dim = get_encoder_dim(encoder_name)
+            if encoder_dim:
+                params["encoder.dim"] = encoder_dim
+
+        # Add data traceability
+        if self.data.dataset_name:
+            params["dataset"] = self.data.dataset_name
+        params["data.features_dir"] = self.data.features_dir
+        params["data.labels_csv"] = self.data.labels_csv
+
+        return params
+
+    def _get_encoder_name(self) -> Optional[str]:
+        """Get encoder name from config or model_name.
+
+        Priority:
+        1. Explicit encoder config
+        2. Parsed from model_name
+        """
+        if self.encoder is not None:
+            return self.encoder.name
+        return parse_encoder_from_model_name(self.model_name)
 
     def save(self, path: str):
         """Save config to JSON file."""
@@ -219,6 +299,11 @@ class ExperimentConfig:
         with open(path, 'r') as f:
             data = json.load(f)
 
+        # Load encoder config if present
+        encoder_config = None
+        if 'encoder' in data:
+            encoder_config = EncoderConfig(**data['encoder'])
+
         # Load tracking config (new format)
         tracking_config = None
         if 'tracking' in data:
@@ -237,6 +322,7 @@ class ExperimentConfig:
             output_dir=data.get('output_dir', 'experiments'),
             run_name=data.get('run_name'),
             num_heads=data.get('num_heads', 1),
+            encoder=encoder_config,
             tracking=tracking_config,
             mlflow=mlflow_config,
         )
