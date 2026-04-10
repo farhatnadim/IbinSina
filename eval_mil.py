@@ -118,7 +118,7 @@ def main():
     model = create_model(model_name, num_classes=num_classes)
 
     # Load checkpoint
-    checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=True)
+    checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=False)
     if 'model_state_dict' in checkpoint:
         model.load_state_dict(checkpoint['model_state_dict'])
     else:
