@@ -76,7 +76,7 @@ def load_model(
     """
     model = create_model(model_name, num_classes=num_classes)
 
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     if 'model_state_dict' in checkpoint:
         model.load_state_dict(checkpoint['model_state_dict'])
     else:
@@ -108,7 +108,18 @@ def predict_single(
 
     with torch.no_grad():
         with torch.autocast(device_type=device.type, enabled=device.type == 'cuda'):
-            logits = model(features)
+            output = model(features)
+
+    # Handle different model output formats:
+    # - tuple: (logits, attention) or (dict, attention)
+    # - dict: {'logits': tensor, ...}
+    # - tensor: raw logits
+    if isinstance(output, tuple):
+        output = output[0]
+    if isinstance(output, dict):
+        logits = output['logits']
+    else:
+        logits = output
 
     # Get probabilities and prediction
     probs = F.softmax(logits, dim=1)
